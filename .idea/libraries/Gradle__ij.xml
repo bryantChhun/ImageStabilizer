@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="Gradle: ij">
+    <CLASSES>
+      <root url="jar:///Applications/Micro-Manager-2.0.0-gamma1-20190806/ij.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
