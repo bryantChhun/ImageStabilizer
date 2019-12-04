@@ -63,6 +63,8 @@ FITNESS FOR ANY PARTICULAR PURPOSE.
 import java.lang.*;
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
+
 import ij.*;
 import ij.process.*;
 import ij.plugin.frame.Editor;
@@ -71,7 +73,7 @@ import ij.io.*;
 
 
 //public class Image_Stabilizer implements PlugInFilter {
-public class Image_Stabilizer implements Runnable{
+public class Image_Stabilizer implements Runnable {
 
     static final int TRANSLATION = 0;
     static final int AFFINE = 1;
@@ -100,7 +102,7 @@ public class Image_Stabilizer implements Runnable{
         maxIter = maxIter_;
         tol = tol_;
         outputDir = outputDir_;
-        if (logEnabled_ == true){
+        if (logEnabled_){
             logEditor = new Editor();
             logEditor.display(
                     imp.getShortTitle() + ".log",
@@ -178,9 +180,13 @@ public class Image_Stabilizer implements Runnable{
             // Display the new stacks.
 //            impOut.show();
 
-            FileSaver fs = new FileSaver(impOut);
-            fs.saveAsTiffStack(outputDir + File.separator + impOut.getTitle() + "_stabilized.tif");
-
+            try {
+                FileSaver fs = new FileSaver(impOut);
+                fs.saveAsTiffStack(outputDir + File.separator + impOut.getTitle() + "_stabilized.tif");
+            } catch (Exception ex) {
+                System.out.print(ex.toString());
+                Arrays.asList(ex.getStackTrace()).forEach(System.out::println);
+            }
         }
         System.out.println("Run Complete");
         System.exit(0);
@@ -378,11 +384,11 @@ public class Image_Stabilizer implements Runnable{
                         }
                         else if (interval < 0) {
                             stackOut.addSlice(label, ipByteOut, 0);
-                            saveSlice(ipByteOut, slice);
+//                            saveSlice(ipByteOut, slice);
                         }
                         else {
                             stackOut.addSlice(label, ipByteOut);
-                            saveSlice(ipByteOut, slice);
+//                            saveSlice(ipByteOut, slice);
                         }
                     }
                     else if (ip instanceof ShortProcessor) {
@@ -396,11 +402,11 @@ public class Image_Stabilizer implements Runnable{
                         }
                         else if (interval < 0) {
                             stackOut.addSlice(label, ipShortOut, 0);
-                            saveSlice(ipShortOut, slice);
+//                            saveSlice(ipShortOut, slice);
                         }
                         else {
                             stackOut.addSlice(label, ipShortOut);
-                            saveSlice(ipShortOut, slice);
+//                            saveSlice(ipShortOut, slice);
                         }
                     }
                     else {
@@ -413,11 +419,11 @@ public class Image_Stabilizer implements Runnable{
                         }
                         else if (interval < 0) {
                             stackOut.addSlice(label, ipFloatOut, 0);
-                            saveSlice(ipFloatOut, slice);
+//                            saveSlice(ipFloatOut, slice);
                         }
                         else {
                             stackOut.addSlice(label, ipFloatOut);
-                            saveSlice(ipFloatOut, slice);
+//                            saveSlice(ipFloatOut, slice);
                         }
                     }
                 }
@@ -433,6 +439,7 @@ public class Image_Stabilizer implements Runnable{
 
     /**
      * if ip normal stack
+     *  currently produces error message "An error occured writing the file."
      * @param ip : ImageProcessor
      * @param slice : slice
      */

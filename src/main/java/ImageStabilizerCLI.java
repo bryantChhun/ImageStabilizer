@@ -48,6 +48,8 @@ public class ImageStabilizerCLI {
         Float coeff = null;
         Integer iterations = null;
         Double tolerance = null;
+        boolean logEnabled = false;
+
         Image_Stabilizer IS = null;
 
         Options options = new Options();
@@ -64,7 +66,7 @@ public class ImageStabilizerCLI {
         ss.setRequired(false);
         options.addOption(ss);
 
-        Option transformation = new Option("t", "transformation", true, "transformation type: translation or affine");
+        Option transformation = new Option("t", "transformation", true, "transformation type: Translation or Affine");
         transformation.setRequired(true);
         options.addOption(transformation);
 
@@ -83,6 +85,10 @@ public class ImageStabilizerCLI {
         Option maxTolerance = new Option("tol", "maxTolerance", true, "Error Tolerance (default 1e-7");
         maxTolerance.setRequired(false);
         options.addOption(maxTolerance);
+
+        Option logger = new Option("log", "logEnabled", false, "Flag to turn on coordinate logging");
+        logger.setRequired(false);
+        options.addOption(logger);
 
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
@@ -107,6 +113,9 @@ public class ImageStabilizerCLI {
             }
             if(cmd.hasOption("maxTolerance")){
                 tolerance = Double.parseDouble(cmd.getOptionValue("maxTolerance"));
+            }
+            if (cmd.hasOption("logEnabled")){
+                logEnabled = true;
             }
             System.out.println("cmd line args retrieved");
 
@@ -139,7 +148,7 @@ public class ImageStabilizerCLI {
             ImagePlus iplus = new ImagePlus(String.format("img_%s", substring), stack);
 
             if (coeff != null && iterations != null && tolerance != null) {
-                IS = new Image_Stabilizer(iplus, transformationType, outputFilePath, pyramids, coeff, iterations, tolerance, false);
+                IS = new Image_Stabilizer(iplus, transformationType, outputFilePath, pyramids, coeff, iterations, tolerance, true);
             } else {
                 IS = new Image_Stabilizer(iplus, transformationType, outputFilePath);
             }
@@ -152,7 +161,8 @@ public class ImageStabilizerCLI {
 
         // run in another thread
         System.out.println("Launching executor");
-        ijExecutor.execute(IS);
+//        ijExecutor.execute(IS);
+        IS.run();
 
     }
 
