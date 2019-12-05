@@ -40,6 +40,7 @@ import java.io.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.lang.*;
+import java.util.Arrays;
 import javax.swing.*;
 import ij.*;
 import ij.gui.*;
@@ -48,7 +49,7 @@ import ij.plugin.filter.*;
 import ij.plugin.frame.Editor;
 import ij.io.*;
 
-public class Image_Stabilizer_Log_Applier implements PlugInFilter {
+public class Image_Stabilizer_Log_Applier implements Runnable {
 
     static final int TRANSLATION = 0;
     static final int AFFINE = 1;
@@ -58,23 +59,30 @@ public class Image_Stabilizer_Log_Applier implements PlugInFilter {
     ImageStack     stackOut = null;
     String         outputDir = null;
     boolean        stackVirtual = false;
-    boolean        outputNewStack = false;
+    boolean        outputNewStack = true;
     int            transform = TRANSLATION;
     
     /* log */
     String[]       log = null;
     Editor         logEditor = null;
     int            logLine = 0;
-    
-    
-    public int setup(String arg, ImagePlus imp) {
-        IJ.register(Image_Stabilizer_Log_Applier.class);
-        this.imp = imp;
-        return DOES_ALL|STACK_REQUIRED;
+
+    ImageProcessor ip;
+    String logPath;
+
+    Image_Stabilizer_Log_Applier(ImagePlus imp_,
+                                 String transform_,
+                                 String outputDir_,
+                                 String logPath_) {
+        imp = imp_;
+        ip = imp.getProcessor();
+        logPath = logPath_;
+        transform = getTransform(transform_);
+        outputDir = outputDir_;
     }
 
 
-    public void run(ImageProcessor ip) {
+    public void run() {
         stack = imp.getStack();
 
         if (stack.isVirtual()) {
@@ -111,11 +119,13 @@ public class Image_Stabilizer_Log_Applier implements PlugInFilter {
             outputNewStack = true;
         }
 
-        if (!loadLogEditor())
+//        if (!loadLogEditor())
+//            return;
+        if(!loadLogText(logPath))
             return;
 
-        if (!stackVirtual && !showDialog(ip))
-            return;
+//        if (!stackVirtual && !showDialog(ip))
+//            return;
 
         int current = imp.getCurrentSlice();
         ImageProcessor ipRef = stack.getProcessor(current);
@@ -131,34 +141,47 @@ public class Image_Stabilizer_Log_Applier implements PlugInFilter {
             imp.updateAndDraw();
         else if (stackOut.getSize() > 0) {
             // Create new image using the new stack.
-            ImagePlus impOut = new ImagePlus(
-                "Stablized " + imp.getShortTitle(), stackOut);
+//            ImagePlus impOut = new ImagePlus(
+//                "Stablized " + imp.getShortTitle(), stackOut);
+//            impOut.setStack(null, stackOut);
+            ImagePlus impOut = new ImagePlus(imp.getShortTitle(), stackOut);
             impOut.setStack(null, stackOut);
 
-            // Display the new stacks.
-            impOut.show();
+            // save the multipage tiff
+            try {
+                FileSaver fs = new FileSaver(impOut);
+                fs.saveAsTiffStack(outputDir + File.separator + impOut.getTitle() + "_stabilized.tif");
+            } catch (Exception ex) {
+                System.out.print(ex.toString());
+                Arrays.asList(ex.getStackTrace()).forEach(System.out::println);
+            }
         }
     }
 
-
-    boolean showDialog(ImageProcessor ip) {
-        GenericDialog gd = new GenericDialog("Image Stabilizer");
-        if (transform == AFFINE)
-            gd.addMessage("-- Applying Affine Image Stabilization --");
-        else
-            gd.addMessage("-- Applying Translation Image Stabilization --");
-        gd.addCheckbox("Output_to_a_New_Stack", false);
-        gd.showDialog();
-        if (gd.wasCanceled())
-            return false;
-        outputNewStack = gd.getNextBoolean();
-        return true;
-    }
-
+//    boolean showDialog(ImageProcessor ip) {
+//        GenericDialog gd = new GenericDialog("Image Stabilizer");
+//        if (transform == AFFINE)
+//            gd.addMessage("-- Applying Affine Image Stabilization --");
+//        else
+//            gd.addMessage("-- Applying Translation Image Stabilization --");
+//        gd.addCheckbox("Output_to_a_New_Stack", false);
+//        gd.showDialog();
+//        if (gd.wasCanceled())
+//            return false;
+//        outputNewStack = gd.getNextBoolean();
+//        return true;
+//    }
 
     void showProgress(double percent) {
         if (!stackVirtual)
             IJ.showProgress(percent);
+    }
+
+    int getTransform(String name) {
+        int xform = TRANSLATION;
+        if (name.compareTo("Affine") == 0)
+            xform = AFFINE;
+        return xform;
     }
 
 
@@ -169,13 +192,13 @@ public class Image_Stabilizer_Log_Applier implements PlugInFilter {
         int stackSize = stack.getSize();
 
         for (++logLine; logLine < log.length; ++logLine) {
-            if (IJ.escapePressed() || imp.getWindow().isClosed()) 
-                break;
-
+//            if (IJ.escapePressed() || imp.getWindow().isClosed())
+//                break;
+            System.out.println("inside process loop :"+Integer.toString(logLine));
             int slice = 0;
             int interval = 0;
             double[][] wp = null;
-            
+
             String s = log[logLine];
             
             try {
@@ -215,17 +238,21 @@ public class Image_Stabilizer_Log_Applier implements PlugInFilter {
             }
             catch (NumberFormatException e) {
                 IJ.error("Invalid log: " + e.getMessage() + ".");
+                System.out.println("Invalid log: "+e.getMessage());
                 break;
             }
             
             if (slice < 1 || slice > stackSize) {
                 IJ.showStatus("Skipping slice " + slice + "...");
+                System.out.println("Skipping slice "+ slice);
                 continue;
             }
             
             String label = stack.getSliceLabel(slice);
             IJ.showStatus("Stabilizing " + slice + "/" + stackSize + 
                 " ... (Press 'ESC' to Cancel)");
+            System.out.println("Stabilizing " + slice + "/" + stackSize);
+
             ImageProcessor ip = stack.getProcessor(slice);
             ImageProcessor ipFloat = ip.convertToFloat();
 
@@ -412,23 +439,63 @@ public class Image_Stabilizer_Log_Applier implements PlugInFilter {
         } // y
     }
     
-    boolean loadLogEditor() {
-        
-        Frame[] fs = WindowManager.getNonImageWindows();
-        
-        for (int i = 0; i < fs.length; ++i) {
-            if (fs[i] instanceof Editor){
-                String temp = ((Editor) fs[i]).getText();
-                
-                if (!temp.startsWith("Image Stabilizer Log File"))
-                    continue;
-                else if (null != log) {
-                    IJ.error("Multiple log windows are open. Please close all logs but the one you wish to apply.");
-                    return false;
-                }
-                
-                log = temp.split("\n");
+//    boolean loadLogEditor() {
+//
+//        Frame[] fs = WindowManager.getNonImageWindows();
+//
+//        for (int i = 0; i < fs.length; ++i) {
+//            if (fs[i] instanceof Editor){
+//                String temp = ((Editor) fs[i]).getText();
+//
+//                if (!temp.startsWith("Image Stabilizer Log File"))
+//                    continue;
+//                else if (null != log) {
+//                    IJ.error("Multiple log windows are open. Please close all logs but the one you wish to apply.");
+//                    return false;
+//                }
+//
+//                log = temp.split("\n");
+//            }
+//        }
+//
+//        if (null != log) {
+//            try {
+//                String s = log[++logLine];
+//                transform = Integer.parseInt(s);
+//                if (transform != AFFINE && transform != TRANSLATION) {
+//                    IJ.error("Invalid transformation \"" + s + "\".");
+//                    return false;
+//                }
+//            }
+//            catch (NumberFormatException e) {
+//                IJ.error("Invalid log: " + e.getMessage() + ".");
+//                return false;
+//            }
+//            return true;
+//        }
+//
+//        IJ.error("No log file is open or the log files are corrupted.");
+//        return false;
+//    }
+
+    private boolean loadLogText(String logPath_) {
+
+        // parse log file
+        try(BufferedReader br = new BufferedReader(new FileReader(logPath_))) {
+            StringBuilder sb = new StringBuilder();
+            String line = br.readLine();
+
+            while (line != null) {
+                sb.append(line);
+                sb.append("\n");
+                line = br.readLine();
             }
+            String everything = sb.toString();
+
+            log = everything.split("\n");
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
         }
 
         if (null != log) {
@@ -447,7 +514,6 @@ public class Image_Stabilizer_Log_Applier implements PlugInFilter {
             return true;
         }
 
-        IJ.error("No log file is open or the log files are corrupted.");
         return false;
     }
 }

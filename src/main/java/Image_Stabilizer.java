@@ -60,10 +60,14 @@ WARRANTY OF ANY KIND CONCERNING  THE MERCHANTABILITY OF THIS SOFTWARE  OR ITS
 FITNESS FOR ANY PARTICULAR PURPOSE.
 */
 
+import java.io.PrintWriter;
 import java.lang.*;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Scanner;
 
 import ij.*;
 import ij.process.*;
@@ -92,9 +96,18 @@ public class Image_Stabilizer implements Runnable {
 
     /* transformation coefficient Log */
     boolean    logEnabled = false;
-    Editor     logEditor = null;
+//    Editor     logEditor = null;
+//    StringBuilder logEditor = null;
+    private static List<String> logEditor = null;
 
-    Image_Stabilizer(ImagePlus imp_, String transform_, String outputDir_, int pyramidLevel_, double alpha_, int maxIter_, double tol_, boolean logEnabled_) {
+    Image_Stabilizer(ImagePlus imp_,
+                     String transform_,
+                     String outputDir_,
+                     boolean logEnabled_,
+                     int pyramidLevel_,
+                     double alpha_,
+                     int maxIter_,
+                     double tol_) {
         imp = imp_;
         transform = getTransform(transform_);
         pyramidLevel = pyramidLevel_;
@@ -102,19 +115,27 @@ public class Image_Stabilizer implements Runnable {
         maxIter = maxIter_;
         tol = tol_;
         outputDir = outputDir_;
+        System.out.println("LOG ENABLED = "+logEnabled_);
         if (logEnabled_){
-            logEditor = new Editor();
-            logEditor.display(
-                    imp.getShortTitle() + ".log",
-                    "Image Stabilizer Log File for "
-                            + "\"" + imp.getShortTitle() + "\"\n"
-                            + transform + "\n"
-            );
+
+            System.out.println("creating editor");
+            logEditor = new ArrayList<>();
+
+//            logEditor = new StringBuilder(
+//                    "Image Stabilizer Log File for "
+//                    + "\"" + imp.getShortTitle() + "\"\n"
+//                    + transform + "\n");
+
+            logEditor.add("Image Stabilizer Log File for "
+                    + "\"" + imp.getShortTitle() + "\"\n"
+                    + transform);
+
+            System.out.println("editor created");
         }
     }
 
-    Image_Stabilizer(ImagePlus imp_, String transform_, String outputDir_) {
-        this(imp_, transform_, outputDir_, 1, 0.9, 200, 1e-7, false);
+    Image_Stabilizer(ImagePlus imp_, String transform_, String outputDir_, boolean logEnabled_) {
+        this(imp_, transform_, outputDir_, logEnabled_, 1, 0.9, 200, 1e-7);
     }
 
     @Override
@@ -173,13 +194,10 @@ public class Image_Stabilizer implements Runnable {
         else if (stackOut.getSize() > 0) {
 
             // Create new image using the new stack.
-            ImagePlus impOut = new ImagePlus(
-                imp.getShortTitle(), stackOut);
+            ImagePlus impOut = new ImagePlus(imp.getShortTitle(), stackOut);
             impOut.setStack(null, stackOut);
 
-            // Display the new stacks.
-//            impOut.show();
-
+            // save the multipage tiff
             try {
                 FileSaver fs = new FileSaver(impOut);
                 fs.saveAsTiffStack(outputDir + File.separator + impOut.getTitle() + "_stabilized.tif");
@@ -187,10 +205,18 @@ public class Image_Stabilizer implements Runnable {
                 System.out.print(ex.toString());
                 Arrays.asList(ex.getStackTrace()).forEach(System.out::println);
             }
+
+            // save the log if recording
+            try (PrintWriter writer = new PrintWriter(
+                    outputDir + File.separator + impOut.getTitle() + "_stabilized_log.txt",
+                    "UTF-8")) {
+                logEditor.forEach(writer::println);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
         }
         System.out.println("Run Complete");
         System.exit(0);
-
     }
 
 
@@ -276,19 +302,21 @@ public class Image_Stabilizer implements Runnable {
 
                 if (transform == TRANSLATION){
                    if (logEditor != null) {
-                       logEditor.append(
+                       System.out.println("APPENDING TRANSLATION TO LOG");
+                       logEditor.add(
                            Integer.toString(slice) + "," + 
                            Integer.toString(interval) + "," + 
-                           "0,0\n"
+                           "0,0"
                        );
                    }
                 }
                 else {
                    if (logEditor != null) {
-                       logEditor.append(
+                       System.out.println("APPENDING AFFINE TO LOG");
+                       logEditor.add(
                            Integer.toString(slice) + "," + 
                            Integer.toString(interval) + "," + 
-                           "0,0,0,0,0,0\n"
+                           "0,0,0,0,0,0"
                        );
                    }
                 }
@@ -318,28 +346,36 @@ public class Image_Stabilizer implements Runnable {
                     wp = estimateTranslation(
                         ipFloat, ipFloatRef, ipPyramid, ipRefPyramid, maxIter, tol);
                     
-                    if (logEnabled) {
-                        logEditor.append(
+                    if (logEditor != null) {
+                        System.out.println("APPENDING TRANSLATION TO LOG\n\t");
+                        logEditor.add(
                             Integer.toString(slice) + "," + Integer.toString(interval) + "," +
                             Double.toString(wp[0][0]) + "," +
-                            Double.toString(wp[1][0]) +
-                            "\n");
+                            Double.toString(wp[1][0])
+                        );
+
+//                        System.out.println(Integer.toString(slice) + "," + Integer.toString(interval) + "," +
+//                                Double.toString(wp[0][0]) + "," +
+//                                Double.toString(wp[1][0]) +
+//                                "\n");
+
                     }
                 }
                 else {
                     wp = estimateAffine(
                         ipFloat, ipFloatRef, ipPyramid, ipRefPyramid, maxIter, tol);
                     
-                    if (logEnabled) {
-                        logEditor.append(
+                    if (logEditor != null) {
+                        System.out.println("APPENDING AFFINE TO LOG");
+                        logEditor.add(
                             Integer.toString(slice) + "," + Integer.toString(interval) + "," +
                             Double.toString(wp[0][0]) + "," +
                             Double.toString(wp[0][1]) + "," +
                             Double.toString(wp[0][2]) + "," +
                             Double.toString(wp[1][0]) + "," +
                             Double.toString(wp[1][1]) + "," +
-                            Double.toString(wp[1][2]) + "," +
-                            "\n");
+                            Double.toString(wp[1][2]) + ","
+                        );
                     }
                 }
                 
@@ -374,7 +410,6 @@ public class Image_Stabilizer implements Runnable {
                 }
                 else {
                     if (ip instanceof ByteProcessor) {
-                        System.out.println("ip instance of ByteProcessor");
                         ImageProcessor ipByteOut = ipFloatOut.convertToByte(false);
                         if (stackOut == null) {
                             if (!stackVirtual)
@@ -392,7 +427,6 @@ public class Image_Stabilizer implements Runnable {
                         }
                     }
                     else if (ip instanceof ShortProcessor) {
-                        System.out.println("ip instance of ShortProcessor");
                         ImageProcessor ipShortOut = ipFloatOut.convertToShort(false);
                         if (stackOut == null) {
                             if (!stackVirtual)
@@ -410,7 +444,6 @@ public class Image_Stabilizer implements Runnable {
                         }
                     }
                     else {
-                        System.out.println("ip not instance of anything");
                         if (stackOut == null) {
                             if (!stackVirtual)
                                 stack.setPixels(ipFloatOut.getPixels(), slice);

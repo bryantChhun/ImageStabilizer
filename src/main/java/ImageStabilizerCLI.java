@@ -22,7 +22,6 @@ import ij.io.Opener;
 import ij.process.ImageProcessor;
 import org.apache.commons.cli.*;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -49,8 +48,11 @@ public class ImageStabilizerCLI {
         Integer iterations = null;
         Double tolerance = null;
         boolean logEnabled = false;
+        String logPath = null;
+        Integer slice = null;
 
         Image_Stabilizer IS = null;
+        Image_Stabilizer_Log_Applier ISLA = null;
 
         Options options = new Options();
 
@@ -71,7 +73,7 @@ public class ImageStabilizerCLI {
         options.addOption(transformation);
 
         Option maxPyramids = new Option("p", "maxPyramids", true, "Maximum Pyramid Levels: 0, 1, 2, 3, 4");
-        maxPyramids.setRequired(true);
+        maxPyramids.setRequired(false);
         options.addOption(maxPyramids);
 
         Option updateCoeff = new Option("update", "updateCoeff", true, "Template Update Coefficient (default 0.9): 0 - 1");
@@ -90,6 +92,14 @@ public class ImageStabilizerCLI {
         logger.setRequired(false);
         options.addOption(logger);
 
+        Option zSlice = new Option("z", "zSlice", true, "Flag to turn on coordinate logging");
+        zSlice.setRequired(false);
+        options.addOption(zSlice);
+
+        Option logApply = new Option("applier", "logApplier", true, "Flag to signify that a log file will be applied");
+        logApply.setRequired(false);
+        options.addOption(logApply);
+
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
         CommandLine cmd;
@@ -100,8 +110,10 @@ public class ImageStabilizerCLI {
             inputFilePath = cmd.getOptionValue("input");
             outputFilePath = cmd.getOptionValue("output");
             transformationType = cmd.getOptionValue("transformation");
-            pyramids = Integer.parseInt(cmd.getOptionValue("maxPyramids"));
 
+            if(cmd.hasOption("maxPyramids")){
+                pyramids = Integer.parseInt(cmd.getOptionValue("maxPyramids"));
+            }
             if(cmd.hasOption("substring")){
                 substring = cmd.getOptionValue("substring");
             }
@@ -117,6 +129,12 @@ public class ImageStabilizerCLI {
             if (cmd.hasOption("logEnabled")){
                 logEnabled = true;
             }
+            if (cmd.hasOption("logApplier")){
+                logPath = cmd.getOptionValue("logApplier");
+            }
+            if (cmd.hasOption("zSlice")) {
+                slice = Integer.parseInt(cmd.getOptionValue("zSlice"));
+            }
             System.out.println("cmd line args retrieved");
 
         } catch (ParseException e) {
@@ -126,10 +144,10 @@ public class ImageStabilizerCLI {
             System.exit(1);
         }
 
-        // filter the list of images by substring and pass to Stabilizer
+        // filter the list of images by substring and create an ImagePlus from them
         try {
             System.out.println("parsing");
-            List<String> filteredTiffs = parseTiffs(inputFilePath, substring, ".tif");
+            List<String> filteredTiffs = parseTiffs(inputFilePath, substring, slice, ".tif");
 
             System.out.println("casting tiffs to string array");
             String[] s = Arrays.copyOf(filteredTiffs.toArray(), filteredTiffs.toArray().length, String[].class);
@@ -143,14 +161,14 @@ public class ImageStabilizerCLI {
 
             System.out.println("Creating ImagePlus and Stabilizer Constructor");
             ImageStack stack = toStack(sortedTiffs);
-//            File f = new File(sortedTiffs[0]);
-//            f.getName();
             ImagePlus iplus = new ImagePlus(String.format("img_%s", substring), stack);
 
-            if (coeff != null && iterations != null && tolerance != null) {
-                IS = new Image_Stabilizer(iplus, transformationType, outputFilePath, pyramids, coeff, iterations, tolerance, true);
+            if (coeff != null && iterations != null && tolerance != null && logPath == null) {
+                IS = new Image_Stabilizer(iplus, transformationType, outputFilePath, logEnabled, pyramids, coeff, iterations, tolerance);
+            } else if (logPath == null) {
+                IS = new Image_Stabilizer(iplus, transformationType, outputFilePath, logEnabled);
             } else {
-                IS = new Image_Stabilizer(iplus, transformationType, outputFilePath);
+                ISLA = new Image_Stabilizer_Log_Applier(iplus, transformationType, outputFilePath, logPath);
             }
             System.out.println("Stabilizer initialized");
 
@@ -161,9 +179,12 @@ public class ImageStabilizerCLI {
 
         // run in another thread
         System.out.println("Launching executor");
-//        ijExecutor.execute(IS);
-        IS.run();
-
+        if (logPath != null) {
+            ISLA.run();
+        } else {
+//            ijExecutor.execute(IS);
+            IS.run();
+        }
     }
 
     /**
@@ -174,29 +195,47 @@ public class ImageStabilizerCLI {
      * @param extension_ : filter by extension
      * @return : unsorted list of string paths
      */
-    private static List<String> parseTiffs(String inputFilePath_, String substring_, String extension_) {
+    private static List<String> parseTiffs(String inputFilePath_, String substring_, Integer slice_, String extension_) {
+        final String sstring = substring_;
+        final String extension = extension_;
+        final Integer slice = slice_;
 
         try (Stream<Path> walk = Files.walk(Paths.get(inputFilePath_))) {
-            final String sstring = substring_;
-            final String extension = extension_;
 
-            if(sstring == null) {
-                List<String> images = walk.filter(Files::isRegularFile)
-                        .map(x -> x.toString())
-                        .filter(f -> f.endsWith(extension))
-                        .collect(Collectors.toList());
-                System.out.println("filter");
-                return images;
-            } else {
-                List<String> images = walk.filter(Files::isRegularFile)
-                        .map(x -> x.toString())
-                        .filter(f -> f.endsWith(extension))
-                        .filter(f -> f.contains(sstring))
-                        .collect(Collectors.toList());
-                System.out.println("substring filter");
-                return images;
+            Stream<String> build = walk.filter(Files::isRegularFile)
+                    .map(x -> x.toString());
+
+            if(extension != null) {
+                System.out.println("extension specified");
+                build = build.filter(f -> f.endsWith(extension));
             }
-
+            if(sstring != null) {
+                System.out.println("substring specified");
+                build = build.filter(f -> f.contains(sstring));
+            }
+            if(slice != null) {
+                System.out.println("z slice specified");
+                build = build.filter(f -> f.contains(String.format("z%03d", slice)));
+            }
+            return build.collect(Collectors.toList());
+//
+//            if(sstring == null) {
+//                build = build.filter(f -> f.endsWith(extension));
+////                List<String> images = walk.filter(Files::isRegularFile)
+////                        .map(x -> x.toString())
+////                        .filter(f -> f.endsWith(extension));
+////                        .collect(Collectors.toList());
+//                System.out.println("filter");
+////                return images;
+//            } else {
+//                List<String> images = walk.filter(Files::isRegularFile)
+//                        .map(x -> x.toString())
+//                        .filter(f -> f.endsWith(extension))
+//                        .filter(f -> f.contains(sstring))
+//                        .collect(Collectors.toList());
+//                System.out.println("substring filter");
+//                return images;
+//            }
         } catch (IOException e) {
             System.out.println(e.toString());
             return null;
